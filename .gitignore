@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 个人数据（绝不应该 commit）
+# 这些目录如果在产品仓库里出现，说明有人误把数据塞进来了
+books/
+dao/
+wiki/
+site/
+journal/
+.state/
+
+# 临时文件
+*.tmp
+*.bak
+*.log
