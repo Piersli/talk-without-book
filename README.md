@@ -110,24 +110,42 @@ clawhub install talk-without-book
 
 三个 skill 遵守 [agentskills.io 开放标准](https://agentskills.io)，跨平台兼容。详见 [INSTALL.md](./INSTALL.md)。
 
-### 方式 E：YouMind 云端版本（推荐用于每日推送）
+### 方式 E：YouMind 单平台完整版（零本地依赖）
 
-YouMind 是云端 agent 平台，不能跑 Python 脚本，但能做**本地版本做不到**的事：定时任务、跨平台 dispatch（微信/Telegram/Lark）、零安装的网页访问。
+[YouMind](https://youmind.com) 是云端 agent 平台。三个 skill 我们都**改造成了纯云端版本**——LLM 替代了 Python 脚本，YouMind board 替代了本地文件系统，**三个 skill 完全在 YouMind 内执行**。
 
-我们为 YouMind 单独做了**适配版本**（pure prompt 形态，结合定时任务把每日浸泡推送到你手机）：
+这意味着：
+- 不用装 Python
+- 不用装 Claude Code / Hermes / OpenClaw
+- 手机/网页就能用
+- 定时推送到 Telegram / 微信 / Lark
+- 你的所有数据存在 YouMind board 里（可以随时导出）
 
 ```
-$INSTALL_DIR/youmind/  ← 部署包
+$INSTALL_DIR/youmind/  ← YouMind 适配包
 ```
 
-把 [`youmind/DEPLOY.md`](./youmind/DEPLOY.md) 整段贴给一个**配好了 YOUMIND_API_KEY** 的 agent（Hermes/Claude Code 都行），它会自动：
+部署方法：把 [`youmind/DEPLOY.md`](./youmind/DEPLOY.md) 整段贴给一个**配好了 YOUMIND_API_KEY** 的 agent，它会自动：
 
 - 创建私有 board「读后无书 Skill 工作台」
-- 创建三个 YouMind 私有 skill（daily / extract / structure）
 - 上传 framework.md 和 道.md 作为材料
-- 设置每天 8 点定时推送今日之道到你绑定的通道
+- 创建三个 YouMind 私有 skill（daily / extract / structure，**全部自包含执行**）
+- 设置每天 8 点定时推送今日之道
 
-**架构**：YouMind = 云端 + 推送 + 轻量 skill；本地 Hermes/Claude = 文件/脚本/知识库执行。两层互补，不冲突。详见 [`youmind/README.md`](./youmind/README.md)。
+### 两种使用路径
+
+| | **本地版**（方式 A-D） | **YouMind 单平台版**（方式 E） |
+|---|---|---|
+| 需要装什么 | Claude Code / Hermes / OpenClaw + Python | 只需 YouMind 账户 |
+| 数据存在哪 | `$TWB_HOME/`（本地文件） | YouMind board |
+| 拆 1 本书速度 | 快（Python 并行） | 中（LLM 顺序）|
+| 拆 1000 本书 | ✓ 可扩展 | ⚠️ 较慢但可行 |
+| Obsidian 集成 | ✓ | ✗ |
+| 每天 8 点推送 Telegram | ✗ | ✓ |
+| 手机用 | ✗ | ✓ |
+| 离线用 | ✓ | ✗ |
+
+**两种路径可以并存** ——本地是 source of truth，YouMind 通过同步保持一致。详见 [`youmind/README.md`](./youmind/README.md)。
 
 ## 怎么用 — 装完之后
 

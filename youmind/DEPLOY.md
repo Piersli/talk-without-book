@@ -1,6 +1,6 @@
 # YouMind 部署指令
 
-> 把这份内容贴给你**另一台机器上配好了 YOUMIND_API_KEY 的 Hermes Agent**，它就会自动部署。
+> 把这份内容贴给一个**配好了 YOUMIND_API_KEY 的 agent**（Hermes / Claude Code / 任意）。它会把读后无书部署为"YouMind 单平台完整版"——三个 skill 全部在 YouMind 内执行，不依赖本地。
 
 ---
 
