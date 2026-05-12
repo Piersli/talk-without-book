@@ -135,7 +135,7 @@ clawhub install talk-without-book
 
 如果你想要"打开网页就能浸泡 + 在网页里直接写入"的体验，看姊妹仓库：
 
-→ **[读后无书 · 浸泡应用](https://github.com/Piersli/读后无书)**
+→ **[读后无书 · 浸泡应用](https://github.com/Piersli/talk-without-book-app)**
 
 它是一个独立的本地小应用，读你的 `$TWB_HOME/` markdown，渲染为「每日斯多葛」风格的 HTML 站点，并提供一个本地 server 让你在网页里直接写入 journal。
 

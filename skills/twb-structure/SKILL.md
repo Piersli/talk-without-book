@@ -196,7 +196,7 @@ python "$SKILL_DIR/scripts/compile.py" "$TWB_ROOT"
 完成后跑 validate 检查完整性。Wiki markdown 已写入 `$TWB_ROOT/wiki/`。
 
 **注意**：本 skill 不渲染 HTML。HTML 浏览界面是独立的姊妹仓库
-（[读后无书 · 浸泡应用](https://github.com/Piersli/读后无书)）的职责。
+（[读后无书 · 浸泡应用](https://github.com/Piersli/talk-without-book-app)）的职责。
 如果用户已经装了那个 app，可以一句话提示"用浏览器看看新生成的 wiki"；
 没装就不要主动建议——本 skill 的工作到生成 markdown 为止。
 
