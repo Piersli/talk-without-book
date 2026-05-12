@@ -129,24 +129,40 @@ clawhub install talk-without-book
 
 完整触发词速查见 [TRIGGERS.md](./TRIGGERS.md)。
 
-## HTML 静态站点
+## HTML 浏览界面
 
-所有 markdown 产出物（道、书拆解、浸泡记录）都会渲染为一份**衬线字体、奶白底、《每日斯多葛》风格**的静态 HTML 站点，输出到 `$TWB_HOME/site/`。
+所有 markdown 产出物都会渲染为一份**衬线字体、奶白底、《每日斯多葛》风格**的 HTML 站点。
+
+### 推荐：交互模式（一行直接写入）
+
+```bash
+python ~/.claude/skills/twb-structure/scripts/render_html.py $TWB_HOME --serve
+```
+
+会在 `http://127.0.0.1:8080` 起一个本地 server，自动打开浏览器。
+
+- 在任意道的家页或今日页输入「记一笔」→ 按钮点一下
+- **直接写入** `$TWB_HOME/dao/journal/道N.md`
+- 立即重新渲染，新条目出现在"过往回响"里
+
+### 静态模式（不需要保持 server 在跑）
 
 ```bash
 python ~/.claude/skills/twb-structure/scripts/render_html.py $TWB_HOME
 open $TWB_HOME/site/index.html
 ```
 
-站点结构：
+只读浏览。"记一笔"按钮会 fallback 为复制触发词到剪贴板（粘贴给 Agent 由 `twb:daily` skill 接住）。
+
+### 站点结构
 
 - `index.html` — 今日之道（入口）
-- `dao/` — 所有的道（总览 + 每条道）
+- `dao/` — 所有的道（总览 + 每条道的家页，每条道的家页是 journal 的归宿）
 - `books/` — 拆解过的书（书架 + 每本书的全部节点）
-- `journal/` — 浸泡轨迹（按道分页）
-- `_assets/style.css` — 共享样式
+- `journal/index.html` — 浸泡记录跨道总览
+- `_assets/style.css` + `_assets/script.js` — 共享资源
 
-Markdown 永远是源，HTML 只是派生视图。Agent 读写 markdown，你看 HTML。
+Markdown 永远是源，HTML 只是派生视图。Agent 和你共用同一份 markdown。
 
 ## 哲学
 

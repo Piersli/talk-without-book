@@ -746,6 +746,31 @@ a:hover { opacity: 0.85; }
 
 ::selection { background: var(--accent); color: var(--bg); }
 
+/* 静态模式提示 banner */
+.static-mode-banner {
+  font-family: -apple-system, "PingFang SC", sans-serif;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--fg-dim);
+  background: var(--quote-bg);
+  border-left: 2px solid var(--fg-faint);
+  padding: 12px 16px;
+  margin: -32px -32px 56px;
+  border-radius: 2px;
+}
+.static-mode-banner strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+.static-mode-banner code {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: 2px;
+  color: var(--fg);
+}
+
 @keyframes pulse-success {
   0% { transform: scale(1); }
   50% { transform: scale(1.04); }
@@ -780,6 +805,9 @@ SCRIPT_JS = r"""
 // 读后无书 · 交互逻辑
 // 优先 POST /api/note；server 未运行则 fallback 复制触发词到剪贴板
 (function() {
+  // 检测运行模式
+  const isServerMode = location.protocol === 'http:' || location.protocol === 'https:';
+
   function setup() {
     const cfg = window.TWB;
     if (!cfg) return;
@@ -789,8 +817,29 @@ SCRIPT_JS = r"""
     const status = document.getElementById('copy-status');
     if (!btn || !ta) return;
 
-    // 保留原始 label 以便恢复
+    // 按模式调整按钮文案
+    if (!isServerMode) {
+      btn.textContent = '复制给 Agent →';
+    }
     btn.dataset.originalLabel = btn.textContent;
+
+    // 静态模式：插入一个温和的提示 banner
+    if (!isServerMode && !document.getElementById('static-mode-banner')) {
+      const banner = document.createElement('div');
+      banner.id = 'static-mode-banner';
+      banner.className = 'static-mode-banner';
+      banner.innerHTML =
+        '<strong>静态模式</strong>（file://）—— 写入将通过"复制 + 粘贴到 Agent"完成。<br>' +
+        '想要点一下就直接保存？跑 <code>python render_html.py $TWB_HOME --serve</code>，从 ' +
+        '<a href="http://127.0.0.1:8080" style="color:inherit;text-decoration:underline">http://127.0.0.1:8080</a> 打开。';
+      // 插入到 nav 之后
+      const nav = document.querySelector('.topnav');
+      if (nav && nav.parentNode) {
+        nav.parentNode.insertBefore(banner, nav.nextSibling);
+      } else {
+        document.body.insertBefore(banner, document.body.firstChild);
+      }
+    }
 
     function showStatus(msg, kind) {
       if (!status) return;
