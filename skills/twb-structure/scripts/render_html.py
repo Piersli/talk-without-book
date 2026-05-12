@@ -435,6 +435,17 @@ a:hover { opacity: 0.85; }
   padding-top: 24px;
   border-top: 1px solid var(--rule);
 }
+.response-area-standalone {
+  /* 独立草稿台（用在道页面，不在 question-block 里）*/
+  margin: 56px 0;
+  padding: 32px 28px;
+  background: var(--quote-bg);
+  border-left: 3px solid var(--accent);
+  border-top: none;
+}
+.response-area-standalone > .label {
+  margin-bottom: 16px;
+}
 .response-area textarea {
   width: 100%;
   min-height: 100px;
@@ -852,7 +863,7 @@ def render_today(dao: Dao, question: str, date_info: dict, has_journal: bool) ->
             )
         more_link = ""
         if len(dao.journal_entries) > 3:
-            more_link = f'<p style="text-align:center;margin-top:16px"><a href="journal/道{dao.id}.html" style="font-size:13px">查看全部 {len(dao.journal_entries)} 条 →</a></p>'
+            more_link = f'<p style="text-align:center;margin-top:16px"><a href="dao/道{dao.id}.html" style="font-size:13px">查看全部 {len(dao.journal_entries)} 条（道{dao.id} 的家页）→</a></p>'
         journal_block = f"""
         <hr class="rule">
         <section class="journal">
@@ -965,73 +976,113 @@ def render_dao_overview(daos: list[Dao]) -> str:
 
 
 def render_dao_page(dao: Dao, link_prefix: str = "") -> str:
-    """单条道的深度页"""
+    """单条道的 canonical 积累页——所有关于这条道的内容都在这里"""
     paras = _split_desc_paragraphs(dao.description)
     desc_html = "".join(f'<p>{html.escape(p)}</p>' for p in paras)
 
-    # 检索问题
+    # ── 草稿台（每条道页都有，触发词是"道N 让我想到 xxx"）──
+    response_area = f"""
+    <div class="response-area response-area-standalone">
+      <div class="label label-center">记一笔</div>
+      <textarea id="response-input" placeholder="读到这条道时想到了什么？一句话也可以。"></textarea>
+      <div class="response-actions">
+        <button id="copy-btn" onclick="copyTrigger()">复制给你的 Agent →</button>
+        <span class="hint">或在终端：<code>cc note {dao.id} "..."</code></span>
+      </div>
+      <div class="copy-status" id="copy-status"></div>
+      <div class="response-help">
+        点击会把"<em>道{dao.id} 让我想到 [你的文字]</em>"复制到剪贴板。粘贴到任意装了
+        <code>twb:daily</code> 的 Agent 会话（Claude Code / Hermes / OpenClaw 等），
+        skill 接住、必要时追问，并把结果沉淀到下方的「过往回响」里。
+      </div>
+    </div>
+    """
+
+    # ── 过往回响（journal 内联）──
+    journal_html = ""
+    if dao.journal_entries:
+        parts = []
+        for ts, q, body in dao.journal_entries:
+            q_line = f'<div class="q-line">问：{html.escape(q)}</div>' if q else ""
+            a_line = f'<div class="a-line">{html.escape(body).replace(chr(10), "<br>")}</div>'
+            parts.append(
+                f'<div class="entry">'
+                f'<div class="ts">{html.escape(ts)}</div>'
+                f'{q_line}{a_line}</div>'
+            )
+        journal_html = f"""
+        <hr class="rule">
+        <section class="journal">
+          <div class="label label-center">你过往的回响（{len(dao.journal_entries)} 条 · 最新在前）</div>
+          {''.join(parts)}
+        </section>
+        """
+    else:
+        journal_html = f"""
+        <hr class="rule">
+        <section class="journal">
+          <div class="label label-center">你过往的回响</div>
+          <div class="empty">还没有。上面那个草稿台是入口。</div>
+        </section>
+        """
+
+    # ── 关于这条道（参考信息，放后面）──
     q_html = ""
     if dao.questions:
         q_items = "".join(f'<li>{html.escape(q)}</li>' for q in dao.questions)
         q_html = f"""
-        <hr class="rule">
         <section>
           <div class="label label-center">检索问题</div>
-          <ul style="list-style:none;padding:0;margin:0;font-size:15px;line-height:1.9">
+          <ul style="list-style:none;padding:0;margin:0;font-size:14px;line-height:1.9;color:var(--fg-dim)">
             {q_items}
           </ul>
         </section>
         """
 
-    # 触碰书籍
     books_html = ""
     if dao.books:
         book_items = "".join(
             f'<li>{html.escape(b)}</li>' for b in dao.books
         )
         books_html = f"""
-        <hr class="rule">
         <section class="sources">
           <div class="label label-center">触碰此道的书籍</div>
           <ul>{book_items}</ul>
         </section>
         """
 
-    # 与其他道的关系
     rel_html = ""
     if dao.relations:
         rel_linked = _auto_link_dao_refs(html.escape(dao.relations),
                                           current_dao_id=dao.id,
                                           link_prefix=link_prefix)
         rel_html = f"""
-        <hr class="rule">
         <section>
           <div class="label label-center">与其他道的关系</div>
-          <p style="font-size:15px;line-height:1.9;color:var(--fg);text-align:justify">
+          <p style="font-size:14px;line-height:1.9;color:var(--fg-dim);text-align:justify">
             {rel_linked}
           </p>
         </section>
         """
 
-    # 下位法
     laws_html = ""
     if dao.laws_line:
         laws_html = f"""
-        <hr class="rule">
         <section>
           <div class="label label-center">下位法</div>
-          <p style="font-size:14px;line-height:1.9;color:var(--fg-dim);text-align:center">
+          <p style="font-size:13px;line-height:1.9;color:var(--fg-dim);text-align:center">
             {html.escape(dao.laws_line)}
           </p>
         </section>
         """
 
-    # journal 入口
-    journal_link = ""
-    if dao.journal_entries:
-        journal_link = f"""
+    reference_block = ""
+    parts = [q_html, books_html, rel_html, laws_html]
+    if any(parts):
+        reference_block = f"""
         <hr class="rule">
-        <p style="text-align:center"><a href="../journal/道{dao.id}.html" style="font-size:13px">浸泡记录 {len(dao.journal_entries)} 条 →</a></p>
+        <div class="label label-center" style="margin-bottom:32px">关于这条道</div>
+        {''.join(p for p in parts if p)}
         """
 
     return f"""
@@ -1041,13 +1092,48 @@ def render_dao_page(dao: Dao, link_prefix: str = "") -> str:
 
     <div class="dao-desc">{desc_html}</div>
 
-    {q_html}
-    {books_html}
-    {rel_html}
-    {laws_html}
-    {journal_link}
+    {response_area}
+
+    {journal_html}
+
+    {reference_block}
 
     <div class="footer">读后无书 · talk without book</div>
+
+    <script>
+      function copyTrigger() {{
+        const ta = document.getElementById('response-input');
+        const status = document.getElementById('copy-status');
+        const btn = document.getElementById('copy-btn');
+        const text = (ta.value || '').trim();
+        if (!text) {{
+          ta.focus();
+          ta.style.borderColor = 'var(--accent)';
+          setTimeout(() => {{ ta.style.borderColor = ''; }}, 600);
+          return;
+        }}
+        const trigger = '道{dao.id} 让我想到 ' + text;
+        navigator.clipboard.writeText(trigger).then(() => {{
+          status.classList.add('visible');
+          status.textContent = '✓ 已复制。打开你的 Agent（Claude Code / Hermes / OpenClaw），直接粘贴。';
+          btn.textContent = '已复制 ✓';
+          btn.disabled = true;
+          setTimeout(() => {{
+            btn.textContent = '复制给你的 Agent →';
+            btn.disabled = false;
+          }}, 4000);
+        }}).catch((err) => {{
+          status.classList.add('visible');
+          status.textContent = '复制失败：' + err;
+        }});
+      }}
+      document.getElementById('response-input').addEventListener('keydown', (e) => {{
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {{
+          e.preventDefault();
+          copyTrigger();
+        }}
+      }});
+    </script>
     """
 
 
@@ -1228,13 +1314,13 @@ def render_journal_index(daos: list[Dao]) -> str:
     """浸泡记录总览（每条有 entry 的道）"""
     daos_with = [d for d in daos if d.journal_entries]
     if not daos_with:
-        body = '<div class="empty">还没有任何浸泡记录。<br>当 banner 出现今日提问时，用 <code>cc note</code> 写第一笔。</div>'
+        body = '<div class="empty">还没有任何浸泡记录。<br>打开任一条道的家页，下方的草稿台是入口。</div>'
     else:
         items = []
         for d in daos_with:
             latest = d.journal_entries[0][0] if d.journal_entries else ""
             items.append(f"""
-            <a class="list-item" href="道{d.id}.html">
+            <a class="list-item" href="../dao/道{d.id}.html">
               <div class="item-id">道 · {d.id}</div>
               <div class="item-title">{html.escape(d.title)}</div>
               <div class="item-meta">{len(d.journal_entries)} 条 · 最近 {html.escape(latest)}</div>
@@ -1245,43 +1331,13 @@ def render_journal_index(daos: list[Dao]) -> str:
     return f"""
     <div class="dao-id">总览</div>
     <h1 class="dao-title">浸泡记录</h1>
-    <div class="dao-category">{len([d for d in daos if d.journal_entries])} 条道有回响</div>
+    <div class="dao-category">{len([d for d in daos if d.journal_entries])} 条道有回响 · 每条道的完整回响在它的家页内</div>
     {body}
     <div class="footer">读后无书 · talk without book</div>
     """
 
 
-def render_journal_page(dao: Dao) -> str:
-    """单条道的浸泡轨迹"""
-    if not dao.journal_entries:
-        body = '<div class="empty">还没有。</div>'
-    else:
-        parts = []
-        for ts, q, body_text in dao.journal_entries:
-            q_line = f'<div class="q-line">问：{html.escape(q)}</div>' if q else ""
-            a_line = f'<div class="a-line">{html.escape(body_text).replace(chr(10), "<br>")}</div>'
-            parts.append(
-                f'<div class="entry">'
-                f'<div class="ts">{html.escape(ts)}</div>'
-                f'{q_line}{a_line}</div>'
-            )
-        body = ''.join(parts)
-
-    return f"""
-    <div class="dao-id">道 · {dao.id}</div>
-    <h1 class="dao-title">{html.escape(dao.title)}</h1>
-    <div class="dao-category">{len(dao.journal_entries)} 条浸泡记录</div>
-
-    <hr class="rule">
-
-    <section class="journal">
-      {body}
-    </section>
-
-    <div class="footer">
-      <a href="../dao/道{dao.id}.html">← 回到道{dao.id} 深度页</a>
-    </div>
-    """
+# （render_journal_page 已删除——单条道的 journal 现在内联在 dao/道N.html 里）
 
 
 # ── 主入口 ──────────────────────────────────────────────────
@@ -1417,23 +1473,17 @@ def main() -> int:
             encoding="utf-8"
         )
 
-    # journal/
+    # journal/index.html （跨道总览。单条道的 journal 已内联到 dao/道N.html）
     (site / "journal").mkdir(exist_ok=True)
     body = render_journal_index(daos)
     (site / "journal" / "index.html").write_text(
-        html_shell("浸泡记录", body, "../_assets/style.css", "journal"),
+        html_shell("浸泡记录总览", body, "../_assets/style.css", "journal"),
         encoding="utf-8"
     )
-    for dao in daos:
-        if dao.journal_entries:
-            body = render_journal_page(dao)
-            (site / "journal" / f"道{dao.id}.html").write_text(
-                html_shell(f"道{dao.id} · 浸泡", body,
-                           "../_assets/style.css", "journal"),
-                encoding="utf-8"
-            )
-    n_journal = sum(1 for d in daos if d.journal_entries)
-    print(f"  ✓ site/journal/ × {n_journal + 1} 页")
+    # 清理旧版残留的 journal/道N.html
+    for old in (site / "journal").glob("道*.html"):
+        old.unlink()
+    print(f"  ✓ site/journal/index.html （跨道总览）")
 
     print(f"\n✓ 全部渲染完成 → {site}")
     print(f"  打开：open {site / 'index.html'}")
