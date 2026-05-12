@@ -68,14 +68,40 @@
 
 **用户可以只用一个，也可以三件套全用——自己选择走多远**。最少用法甚至可以跳过 extract 和 structure，直接用别人分享的道库做 daily 浸泡。
 
-## 安装
+## 安装 — 一行搞定
+
+### 方式 A：直接告诉 agent
+
+复制下面这句话给你的 Claude Code / Hermes Agent / OpenClaw：
+
+> 请把 `https://github.com/Piersli/talk-without-book` 这套 skill 装上：
+> `curl -fsSL https://raw.githubusercontent.com/Piersli/talk-without-book/main/bootstrap.sh | bash`
+
+agent 会自动跑安装脚本，**安装期间不需要离开对话**。
+
+### 方式 B：终端一行
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Piersli/talk-without-book/main/bootstrap.sh | bash
+```
+
+### 方式 C：手动 clone
 
 ```bash
 git clone https://github.com/Piersli/talk-without-book.git ~/读后无书
 bash ~/读后无书/install.sh
 ```
 
-**`install.sh` 自动检测**已安装的 agent 平台并把三个 skill 部署到所有发现的位置：
+### 方式 D：OpenClaw 用户
+
+```bash
+clawhub install talk-without-book
+```
+（前提：本仓库已提交到 ClawHub Registry——待办）
+
+---
+
+**三种方式都会做同一件事**：自动检测你装了哪些 agent 平台，把三个 skill 部署到所有发现的位置：
 
 - ✓ **Claude Code** → `~/.claude/skills/`
 - ✓ **Hermes Agent** → `~/.hermes/skills/`
@@ -83,7 +109,17 @@ bash ~/读后无书/install.sh
 
 三个 skill 遵守 [agentskills.io 开放标准](https://agentskills.io)，跨平台兼容。详见 [INSTALL.md](./INSTALL.md)。
 
-完成后在你的 agent 里说"今天的道"、"拆解这本书"、"审视知识库"——三个 skill 都已激活。
+## 怎么用 — 装完之后
+
+跟你的 agent 说这些话：
+
+```
+今天的道                  → twb-daily 启动
+拆解 /path/to/book.md     → twb-extract 启动
+审视知识库                → twb-structure 启动
+```
+
+完整触发词速查见 [TRIGGERS.md](./TRIGGERS.md)。
 
 ## 哲学
 

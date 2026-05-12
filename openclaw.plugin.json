@@ -1,0 +1,26 @@
+{
+  "name": "talk-without-book",
+  "display_name": "读后无书",
+  "version": "0.1.0",
+  "author": "Piersli",
+  "description": "让你读过的书脱离原文也能存在——最终你无需翻书也能深度思考。方法论 + 三个独立可组合的 skill。",
+  "repository": "https://github.com/Piersli/talk-without-book",
+  "license": "MIT",
+  "homepage": "https://github.com/Piersli/talk-without-book",
+  "skills": [
+    "skills/twb-extract",
+    "skills/twb-structure",
+    "skills/twb-daily"
+  ],
+  "tags": [
+    "knowledge-management",
+    "reading",
+    "second-brain",
+    "dao-fa-shu-qi-shi",
+    "chinese"
+  ],
+  "requirements": {
+    "python": "^3.10",
+    "platforms": ["macos", "linux", "windows"]
+  }
+}
