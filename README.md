@@ -129,40 +129,27 @@ clawhub install talk-without-book
 
 完整触发词速查见 [TRIGGERS.md](./TRIGGERS.md)。
 
-## HTML 浏览界面
+## 想用浏览器浸泡？看姊妹仓库
 
-所有 markdown 产出物都会渲染为一份**衬线字体、奶白底、《每日斯多葛》风格**的 HTML 站点。
+本仓库是**纯 skills 仓库**——三个 agentskills.io 兼容的 skill，靠 agent 对话工作，全部产出物是 markdown。
 
-### 推荐：交互模式（一行直接写入）
+如果你想要"打开网页就能浸泡 + 在网页里直接写入"的体验，看姊妹仓库：
 
-```bash
-python ~/.claude/skills/twb-structure/scripts/render_html.py $TWB_HOME --serve
+→ **[读后无书 · 浸泡应用](https://github.com/Piersli/读后无书)**
+
+它是一个独立的本地小应用，读你的 `$TWB_HOME/` markdown，渲染为「每日斯多葛」风格的 HTML 站点，并提供一个本地 server 让你在网页里直接写入 journal。
+
+两条线靠 `$TWB_HOME/` 共享数据：
+
+```
+agent 通过 skill 写/读 markdown
+                 ↓ ↑
+              $TWB_HOME
+                 ↑ ↓
+浏览器通过 web app 读/写 markdown
 ```
 
-会在 `http://127.0.0.1:8080` 起一个本地 server，自动打开浏览器。
-
-- 在任意道的家页或今日页输入「记一笔」→ 按钮点一下
-- **直接写入** `$TWB_HOME/dao/journal/道N.md`
-- 立即重新渲染，新条目出现在"过往回响"里
-
-### 静态模式（不需要保持 server 在跑）
-
-```bash
-python ~/.claude/skills/twb-structure/scripts/render_html.py $TWB_HOME
-open $TWB_HOME/site/index.html
-```
-
-只读浏览。"记一笔"按钮会 fallback 为复制触发词到剪贴板（粘贴给 Agent 由 `twb:daily` skill 接住）。
-
-### 站点结构
-
-- `index.html` — 今日之道（入口）
-- `dao/` — 所有的道（总览 + 每条道的家页，每条道的家页是 journal 的归宿）
-- `books/` — 拆解过的书（书架 + 每本书的全部节点）
-- `journal/index.html` — 浸泡记录跨道总览
-- `_assets/style.css` + `_assets/script.js` — 共享资源
-
-Markdown 永远是源，HTML 只是派生视图。Agent 和你共用同一份 markdown。
+你可以**只装 skill 这一个仓库**（agent 对话足够）。Web 应用是叠加层，不是必需的。
 
 ## 哲学
 

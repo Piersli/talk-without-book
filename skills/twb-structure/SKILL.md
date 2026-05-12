@@ -193,19 +193,12 @@ python "$SKILL_DIR/scripts/compile.py" "$TWB_ROOT"
 
 执行时**展示进度**——compile.py 自己有 print 输出，转发给用户。
 
-完成后**强烈建议**跑 HTML 渲染器，把所有 markdown 产出物渲染为静态网站：
-```bash
-python "$SKILL_DIR/scripts/render_html.py" "$TWB_ROOT"
-```
+完成后跑 validate 检查完整性。Wiki markdown 已写入 `$TWB_ROOT/wiki/`。
 
-它会生成完整站点到 `$TWB_ROOT/site/`：
-- `index.html` — 今日之道浸泡入口
-- `dao/index.html` + `dao/道N.html` — 所有的道总览 + 每条道的深度页
-- `books/{Book}/index.html` — 每本书拆解的全部节点（法/术/器/势）
-- `journal/道N.html` — 浸泡轨迹
-- `_assets/style.css` — 共享样式（衬线、奶白底、每日斯多葛风格）
-
-打开 `open $TWB_ROOT/site/index.html` 就是用户的主入口。
+**注意**：本 skill 不渲染 HTML。HTML 浏览界面是独立的姊妹仓库
+（[读后无书 · 浸泡应用](https://github.com/Piersli/读后无书)）的职责。
+如果用户已经装了那个 app，可以一句话提示"用浏览器看看新生成的 wiki"；
+没装就不要主动建议——本 skill 的工作到生成 markdown 为止。
 
 ---
 
