@@ -825,14 +825,14 @@ def render_today(dao: Dao, question: str, date_info: dict, has_journal: bool) ->
           <div class="response-area">
             <textarea id="response-input" placeholder="一句话也可以——把脑子里浮现的写下来"></textarea>
             <div class="response-actions">
-              <button id="copy-btn" onclick="copyTrigger()">复制给 Claude Code →</button>
+              <button id="copy-btn" onclick="copyTrigger()">复制给你的 Agent →</button>
               <span class="hint">或在终端：<code>cc note {dao.id} "..."</code></span>
             </div>
             <div class="copy-status" id="copy-status"></div>
             <div class="response-help">
               这里只是草稿台。点击后会把"<em>我想到了：[你的文字]</em>"复制到剪贴板——
-              粘贴到任意 Claude Code / Hermes / OpenClaw 会话里，`twb:daily` skill 会接住、
-              必要时追问，并把最终的 Q-A 沉淀到 <code>dao/journal/道{dao.id}.md</code>。
+              粘贴到任意装了 <code>twb:daily</code> 的 Agent 会话里（Claude Code / Hermes / OpenClaw / 任意 agentskills.io 兼容平台），
+              skill 会接住、必要时追问，并把最终的 Q-A 沉淀到 <code>dao/journal/道{dao.id}.md</code>。
               下次跑渲染器，新的回响就会出现在下方。
             </div>
           </div>
@@ -911,11 +911,11 @@ def render_today(dao: Dao, question: str, date_info: dict, has_journal: bool) ->
         const trigger = '我想到了：' + text;
         navigator.clipboard.writeText(trigger).then(() => {{
           status.classList.add('visible');
-          status.textContent = '✓ 已复制。打开 Claude Code（或任意 agent），直接粘贴。';
+          status.textContent = '✓ 已复制。打开你的 Agent（Claude Code / Hermes / OpenClaw），直接粘贴。';
           btn.textContent = '已复制 ✓';
           btn.disabled = true;
           setTimeout(() => {{
-            btn.textContent = '复制给 Claude Code →';
+            btn.textContent = '复制给你的 Agent →';
             btn.disabled = false;
           }}, 4000);
         }}).catch((err) => {{
