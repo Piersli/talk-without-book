@@ -7,6 +7,7 @@
 [![Claude Code](https://img.shields.io/badge/Claude_Code-✓-orange.svg)](https://claude.ai/code)
 [![Hermes Agent](https://img.shields.io/badge/Hermes_Agent-✓-purple.svg)](https://hermes-agent.org)
 [![OpenClaw](https://img.shields.io/badge/OpenClaw-✓-red.svg)](https://openclaw.ai)
+[![YouMind](https://img.shields.io/badge/YouMind-Cloud-green.svg)](https://youmind.com)
 
 ---
 
@@ -101,13 +102,32 @@ clawhub install talk-without-book
 
 ---
 
-**三种方式都会做同一件事**：自动检测你装了哪些 agent 平台，把三个 skill 部署到所有发现的位置：
+**前三种方式都会做同一件事**：自动检测你装了哪些 agent 平台，把三个 skill 部署到所有发现的位置：
 
-- ✓ **Claude Code** → `~/.claude/skills/`
-- ✓ **Hermes Agent** → `~/.hermes/skills/`
-- ✓ **OpenClaw** → `~/.openclaw/skills/`
+- ✓ **Claude Code** → `~/.claude/skills/`（本地执行）
+- ✓ **Hermes Agent** → `~/.hermes/skills/`（本地执行）
+- ✓ **OpenClaw** → `~/.openclaw/skills/`（本地执行）
 
 三个 skill 遵守 [agentskills.io 开放标准](https://agentskills.io)，跨平台兼容。详见 [INSTALL.md](./INSTALL.md)。
+
+### 方式 E：YouMind 云端版本（推荐用于每日推送）
+
+YouMind 是云端 agent 平台，不能跑 Python 脚本，但能做**本地版本做不到**的事：定时任务、跨平台 dispatch（微信/Telegram/Lark）、零安装的网页访问。
+
+我们为 YouMind 单独做了**适配版本**（pure prompt 形态，结合定时任务把每日浸泡推送到你手机）：
+
+```
+$INSTALL_DIR/youmind/  ← 部署包
+```
+
+把 [`youmind/DEPLOY.md`](./youmind/DEPLOY.md) 整段贴给一个**配好了 YOUMIND_API_KEY** 的 agent（Hermes/Claude Code 都行），它会自动：
+
+- 创建私有 board「读后无书 Skill 工作台」
+- 创建三个 YouMind 私有 skill（daily / extract / structure）
+- 上传 framework.md 和 道.md 作为材料
+- 设置每天 8 点定时推送今日之道到你绑定的通道
+
+**架构**：YouMind = 云端 + 推送 + 轻量 skill；本地 Hermes/Claude = 文件/脚本/知识库执行。两层互补，不冲突。详见 [`youmind/README.md`](./youmind/README.md)。
 
 ## 怎么用 — 装完之后
 
