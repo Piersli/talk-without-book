@@ -429,6 +429,115 @@ a:hover { opacity: 0.85; }
   color: var(--accent); font-weight: 500;
 }
 
+/* 回应区域（草稿台）*/
+.response-area {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule);
+}
+.response-area textarea {
+  width: 100%;
+  min-height: 100px;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.85;
+  padding: 14px 16px;
+  border-radius: 2px;
+  resize: vertical;
+  margin-bottom: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+.response-area textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.response-area textarea::placeholder {
+  color: var(--fg-faint);
+  font-style: italic;
+}
+.response-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+.response-area button {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  padding: 10px 18px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+  font-weight: 500;
+  border-radius: 2px;
+  transition: opacity 0.15s;
+}
+.response-area button:hover {
+  opacity: 0.85;
+}
+.response-area button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.response-area .hint {
+  font-size: 11px;
+  color: var(--fg-dim);
+  letter-spacing: 0.5px;
+}
+.response-area .hint code {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  border-radius: 2px;
+}
+.response-area .copy-status {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--accent);
+  font-family: -apple-system, "PingFang SC", sans-serif;
+  font-weight: 500;
+  display: none;
+  letter-spacing: 0.5px;
+}
+.response-area .copy-status.visible {
+  display: block;
+}
+.response-area .response-help {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--rule);
+  font-size: 12px;
+  color: var(--fg-dim);
+  line-height: 1.8;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+  letter-spacing: 0.3px;
+}
+.response-area .response-help em {
+  color: var(--accent);
+  font-style: normal;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 11px;
+  font-family: "SF Mono", monospace;
+}
+.response-area .response-help code {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: 2px;
+}
+
 /* journal */
 .journal { margin: 56px 0; }
 .entry {
@@ -713,7 +822,20 @@ def render_today(dao: Dao, question: str, date_info: dict, has_journal: bool) ->
         <div class="question-block">
           <div class="label">今日提问</div>
           <div class="q">{html.escape(question)}</div>
-          <div class="cta">一句话回应：<code>cc note {dao.id} "..."</code></div>
+          <div class="response-area">
+            <textarea id="response-input" placeholder="一句话也可以——把脑子里浮现的写下来"></textarea>
+            <div class="response-actions">
+              <button id="copy-btn" onclick="copyTrigger()">复制给 Claude Code →</button>
+              <span class="hint">或在终端：<code>cc note {dao.id} "..."</code></span>
+            </div>
+            <div class="copy-status" id="copy-status"></div>
+            <div class="response-help">
+              这里只是草稿台。点击后会把"<em>我想到了：[你的文字]</em>"复制到剪贴板——
+              粘贴到任意 Claude Code / Hermes / OpenClaw 会话里，`twb:daily` skill 会接住、
+              必要时追问，并把最终的 Q-A 沉淀到 <code>dao/journal/道{dao.id}.md</code>。
+              下次跑渲染器，新的回响就会出现在下方。
+            </div>
+          </div>
         </div>
         """
 
@@ -773,6 +895,42 @@ def render_today(dao: Dao, question: str, date_info: dict, has_journal: bool) ->
       读后无书 · talk without book<br>
       <code>cc dao</code> 终端重看 · <code>cc note</code> 沉淀回响
     </div>
+
+    <script>
+      function copyTrigger() {{
+        const ta = document.getElementById('response-input');
+        const status = document.getElementById('copy-status');
+        const btn = document.getElementById('copy-btn');
+        const text = (ta.value || '').trim();
+        if (!text) {{
+          ta.focus();
+          ta.style.borderColor = 'var(--accent)';
+          setTimeout(() => {{ ta.style.borderColor = ''; }}, 600);
+          return;
+        }}
+        const trigger = '我想到了：' + text;
+        navigator.clipboard.writeText(trigger).then(() => {{
+          status.classList.add('visible');
+          status.textContent = '✓ 已复制。打开 Claude Code（或任意 agent），直接粘贴。';
+          btn.textContent = '已复制 ✓';
+          btn.disabled = true;
+          setTimeout(() => {{
+            btn.textContent = '复制给 Claude Code →';
+            btn.disabled = false;
+          }}, 4000);
+        }}).catch((err) => {{
+          status.classList.add('visible');
+          status.textContent = '复制失败：' + err + '。请手动复制下方草稿。';
+        }});
+      }}
+      // Cmd/Ctrl+Enter 也触发
+      document.getElementById('response-input').addEventListener('keydown', (e) => {{
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {{
+          e.preventDefault();
+          copyTrigger();
+        }}
+      }});
+    </script>
     """
 
 
