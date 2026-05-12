@@ -31,8 +31,13 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import html
+import http.server
+import json
+import os
 import re
+import socketserver
 import sys
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -741,6 +746,20 @@ a:hover { opacity: 0.85; }
 
 ::selection { background: var(--accent); color: var(--bg); }
 
+@keyframes pulse-success {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+.copy-status.success {
+  color: var(--accent);
+  animation: pulse-success 0.4s ease-out;
+}
+.copy-status.error { color: #c62828; }
+@media (prefers-color-scheme: dark) {
+  .copy-status.error { color: #ef9a9a; }
+}
+
 @media (max-width: 600px) {
   .page, .page-wide { padding: 40px 20px 80px; }
   .dateline .date-main { font-size: 36px; }
@@ -754,14 +773,127 @@ a:hover { opacity: 0.85; }
 """
 
 
+# ── 客户端 JavaScript ─────────────────────────────────────
+
+
+SCRIPT_JS = r"""
+// 读后无书 · 交互逻辑
+// 优先 POST /api/note；server 未运行则 fallback 复制触发词到剪贴板
+(function() {
+  function setup() {
+    const cfg = window.TWB;
+    if (!cfg) return;
+
+    const btn = document.getElementById('copy-btn');
+    const ta = document.getElementById('response-input');
+    const status = document.getElementById('copy-status');
+    if (!btn || !ta) return;
+
+    // 保留原始 label 以便恢复
+    btn.dataset.originalLabel = btn.textContent;
+
+    function showStatus(msg, kind) {
+      if (!status) return;
+      status.classList.add('visible');
+      status.classList.remove('success', 'error');
+      if (kind) status.classList.add(kind);
+      status.textContent = msg;
+    }
+
+    function resetButton(delay) {
+      setTimeout(() => {
+        btn.textContent = btn.dataset.originalLabel;
+        btn.disabled = false;
+      }, delay || 4000);
+    }
+
+    async function submit() {
+      const text = (ta.value || '').trim();
+      if (!text) {
+        ta.focus();
+        ta.style.borderColor = 'var(--accent)';
+        setTimeout(() => { ta.style.borderColor = ''; }, 600);
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '写入中...';
+
+      // 优先：POST 到本地 server，直接写 markdown
+      try {
+        const res = await fetch('/api/note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dao_id: cfg.dao_id,
+            text: text,
+            question: cfg.today_question || null
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          showStatus(`✓ 已沉淀到道${cfg.dao_id} 的家页（${data.entries_count} 条）。正在刷新...`, 'success');
+          btn.textContent = '✓ 已保存';
+          ta.value = '';
+          setTimeout(() => location.reload(), 1200);
+          return;
+        }
+        // 4xx / 5xx：把错误显示出来，不 fallback
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        showStatus('✗ 写入失败：' + (err.error || res.status), 'error');
+        btn.textContent = btn.dataset.originalLabel;
+        btn.disabled = false;
+        return;
+      } catch (e) {
+        // 网络错误（没起 server，比如 file:// 打开）→ fallback 复制
+      }
+
+      // Fallback：复制触发词到剪贴板
+      const trigger = cfg.page_type === 'today'
+        ? '我想到了：' + text
+        : '道' + cfg.dao_id + ' 让我想到 ' + text;
+      try {
+        await navigator.clipboard.writeText(trigger);
+        showStatus('（没检测到本地 server）✓ 已复制触发词，粘贴到任意 Agent 会话。', 'success');
+        btn.textContent = '已复制 ✓';
+        resetButton(4000);
+      } catch (e) {
+        showStatus('✗ 写入和复制都失败：' + e, 'error');
+        btn.textContent = btn.dataset.originalLabel;
+        btn.disabled = false;
+      }
+    }
+
+    btn.addEventListener('click', submit);
+    ta.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        submit();
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setup);
+  } else {
+    setup();
+  }
+})();
+""".strip()
+
+
 # ── HTML 模板 ───────────────────────────────────────────────
 
 
 def html_shell(title: str, body: str, css_rel_path: str,
-               nav_active: str = "", wide: bool = False) -> str:
+               nav_active: str = "", wide: bool = False,
+               with_script: bool = False) -> str:
     """完整 HTML 文档外壳"""
     nav = _topnav(css_rel_path, nav_active)
     page_class = "page-wide" if wide else "page"
+    # script.js 与 css 在同一目录
+    script_rel_path = css_rel_path.rsplit('/', 1)[0] + '/script.js' if '/' in css_rel_path else 'script.js'
+    script_tag = f'<script src="{script_rel_path}"></script>' if with_script else ''
     return f"""<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -775,6 +907,7 @@ def html_shell(title: str, body: str, css_rel_path: str,
     {nav}
     {body}
   </div>
+  {script_tag}
 </body>
 </html>
 """
@@ -836,15 +969,16 @@ def render_today(dao: Dao, question: str, date_info: dict, has_journal: bool) ->
           <div class="response-area">
             <textarea id="response-input" placeholder="一句话也可以——把脑子里浮现的写下来"></textarea>
             <div class="response-actions">
-              <button id="copy-btn" onclick="copyTrigger()">复制给你的 Agent →</button>
+              <button id="copy-btn">记一笔 →</button>
               <span class="hint">或在终端：<code>cc note {dao.id} "..."</code></span>
             </div>
             <div class="copy-status" id="copy-status"></div>
             <div class="response-help">
-              这里只是草稿台。点击后会把"<em>我想到了：[你的文字]</em>"复制到剪贴板——
-              粘贴到任意装了 <code>twb:daily</code> 的 Agent 会话里（Claude Code / Hermes / OpenClaw / 任意 agentskills.io 兼容平台），
-              skill 会接住、必要时追问，并把最终的 Q-A 沉淀到 <code>dao/journal/道{dao.id}.md</code>。
-              下次跑渲染器，新的回响就会出现在下方。
+              <strong>有 server 在跑</strong>（通过 <code>render_html.py --serve</code> 启动）→ 直接写入
+              <code>dao/journal/道{dao.id}.md</code>，下方"过往回响"立即出现。
+              <br>
+              <strong>没 server</strong>（直接打开 file://）→ 自动 fallback 为"复制 <em>我想到了：xxx</em> 到剪贴板"，
+              粘贴给任意装了 <code>twb:daily</code> 的 Agent（Claude Code / Hermes / OpenClaw 等）由 skill 接住。
             </div>
           </div>
         </div>
@@ -908,39 +1042,11 @@ def render_today(dao: Dao, question: str, date_info: dict, has_journal: bool) ->
     </div>
 
     <script>
-      function copyTrigger() {{
-        const ta = document.getElementById('response-input');
-        const status = document.getElementById('copy-status');
-        const btn = document.getElementById('copy-btn');
-        const text = (ta.value || '').trim();
-        if (!text) {{
-          ta.focus();
-          ta.style.borderColor = 'var(--accent)';
-          setTimeout(() => {{ ta.style.borderColor = ''; }}, 600);
-          return;
-        }}
-        const trigger = '我想到了：' + text;
-        navigator.clipboard.writeText(trigger).then(() => {{
-          status.classList.add('visible');
-          status.textContent = '✓ 已复制。打开你的 Agent（Claude Code / Hermes / OpenClaw），直接粘贴。';
-          btn.textContent = '已复制 ✓';
-          btn.disabled = true;
-          setTimeout(() => {{
-            btn.textContent = '复制给你的 Agent →';
-            btn.disabled = false;
-          }}, 4000);
-        }}).catch((err) => {{
-          status.classList.add('visible');
-          status.textContent = '复制失败：' + err + '。请手动复制下方草稿。';
-        }});
-      }}
-      // Cmd/Ctrl+Enter 也触发
-      document.getElementById('response-input').addEventListener('keydown', (e) => {{
-        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {{
-          e.preventDefault();
-          copyTrigger();
-        }}
-      }});
+      window.TWB = {{
+        dao_id: {dao.id},
+        today_question: {json.dumps(question)},
+        page_type: "today"
+      }};
     </script>
     """
 
@@ -980,20 +1086,21 @@ def render_dao_page(dao: Dao, link_prefix: str = "") -> str:
     paras = _split_desc_paragraphs(dao.description)
     desc_html = "".join(f'<p>{html.escape(p)}</p>' for p in paras)
 
-    # ── 草稿台（每条道页都有，触发词是"道N 让我想到 xxx"）──
+    # ── 草稿台（每条道页都有）──
     response_area = f"""
     <div class="response-area response-area-standalone">
       <div class="label label-center">记一笔</div>
       <textarea id="response-input" placeholder="读到这条道时想到了什么？一句话也可以。"></textarea>
       <div class="response-actions">
-        <button id="copy-btn" onclick="copyTrigger()">复制给你的 Agent →</button>
+        <button id="copy-btn">记一笔 →</button>
         <span class="hint">或在终端：<code>cc note {dao.id} "..."</code></span>
       </div>
       <div class="copy-status" id="copy-status"></div>
       <div class="response-help">
-        点击会把"<em>道{dao.id} 让我想到 [你的文字]</em>"复制到剪贴板。粘贴到任意装了
-        <code>twb:daily</code> 的 Agent 会话（Claude Code / Hermes / OpenClaw 等），
-        skill 接住、必要时追问，并把结果沉淀到下方的「过往回响」里。
+        <strong>有 server 在跑</strong>（通过 <code>render_html.py --serve</code> 启动）→ 直接写入下方的「过往回响」。
+        <br>
+        <strong>没 server</strong>（file:// 打开）→ 自动 fallback 为"复制 <em>道{dao.id} 让我想到 xxx</em> 到剪贴板"，
+        粘贴给任意装了 <code>twb:daily</code> 的 Agent。
       </div>
     </div>
     """
@@ -1101,38 +1208,11 @@ def render_dao_page(dao: Dao, link_prefix: str = "") -> str:
     <div class="footer">读后无书 · talk without book</div>
 
     <script>
-      function copyTrigger() {{
-        const ta = document.getElementById('response-input');
-        const status = document.getElementById('copy-status');
-        const btn = document.getElementById('copy-btn');
-        const text = (ta.value || '').trim();
-        if (!text) {{
-          ta.focus();
-          ta.style.borderColor = 'var(--accent)';
-          setTimeout(() => {{ ta.style.borderColor = ''; }}, 600);
-          return;
-        }}
-        const trigger = '道{dao.id} 让我想到 ' + text;
-        navigator.clipboard.writeText(trigger).then(() => {{
-          status.classList.add('visible');
-          status.textContent = '✓ 已复制。打开你的 Agent（Claude Code / Hermes / OpenClaw），直接粘贴。';
-          btn.textContent = '已复制 ✓';
-          btn.disabled = true;
-          setTimeout(() => {{
-            btn.textContent = '复制给你的 Agent →';
-            btn.disabled = false;
-          }}, 4000);
-        }}).catch((err) => {{
-          status.classList.add('visible');
-          status.textContent = '复制失败：' + err;
-        }});
-      }}
-      document.getElementById('response-input').addEventListener('keydown', (e) => {{
-        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {{
-          e.preventDefault();
-          copyTrigger();
-        }}
-      }});
+      window.TWB = {{
+        dao_id: {dao.id},
+        today_question: null,
+        page_type: "dao"
+      }};
     </script>
     """
 
@@ -1340,45 +1420,82 @@ def render_journal_index(daos: list[Dao]) -> str:
 # （render_journal_page 已删除——单条道的 journal 现在内联在 dao/道N.html 里）
 
 
-# ── 主入口 ──────────────────────────────────────────────────
+# ── journal 写入 ────────────────────────────────────────────
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="读后无书 · 全产出物 HTML 渲染器"
-    )
-    parser.add_argument("root", type=Path,
-                        help="知识库根目录（$TWB_ROOT），必须包含 dao/道.md")
-    args = parser.parse_args()
+def append_journal_entry(root: Path, dao_id: int, text: str,
+                         question: str | None = None) -> tuple[Path, int]:
+    """
+    追加一条 journal 记录到 $TWB_ROOT/dao/journal/道N.md
+    返回 (journal_file_path, total_entries_count)
+    """
+    journal_dir = root / "dao" / "journal"
+    journal_dir.mkdir(parents=True, exist_ok=True)
+    journal_file = journal_dir / f"道{dao_id}.md"
 
-    root: Path = args.root.resolve()
+    # 文件不存在则建文件头
+    if not journal_file.exists():
+        journal_file.write_text(
+            f"# 道{dao_id} · 联想记录\n\n"
+            f"> 浸泡过程中临场产生的联想、质疑、应用场景。\n",
+            encoding="utf-8"
+        )
+
+    ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    if question:
+        entry = f"\n## {ts}\n\n**问：** {question}\n\n**答：** {text}\n"
+    else:
+        entry = f"\n## {ts}\n\n{text}\n"
+
+    with journal_file.open("a", encoding="utf-8") as f:
+        f.write(entry)
+
+    # 数一下现在有多少条
+    count = 0
+    try:
+        existing = journal_file.read_text(encoding="utf-8")
+        count = len(re.findall(r'(?m)^## \d{4}-\d{2}-\d{2} \d{2}:\d{2}', existing))
+    except Exception:
+        pass
+
+    return journal_file, count
+
+
+# ── 全量渲染（提取出来供 main 和 server 共用）──────────────
+
+
+def render_all(root: Path, quiet: bool = False) -> None:
+    """把 $TWB_ROOT 里的全部 markdown 产出物渲染成 site/ 下的 HTML"""
+    def log(msg):
+        if not quiet:
+            print(msg)
+
     site = root / "site"
     site.mkdir(parents=True, exist_ok=True)
 
     dao_file = root / "dao" / "道.md"
     if not dao_file.exists():
-        print(f"✗ 找不到 {dao_file}", file=sys.stderr)
-        return 1
+        raise FileNotFoundError(f"找不到 {dao_file}")
 
-    # 写 CSS
+    # 共享资源
     assets = site / "_assets"
     assets.mkdir(exist_ok=True)
     (assets / "style.css").write_text(CSS, encoding="utf-8")
-    print(f"  ✓ {assets / 'style.css'}")
+    (assets / "script.js").write_text(SCRIPT_JS, encoding="utf-8")
+    log(f"  ✓ {assets}/style.css + script.js")
 
-    # 解析所有道
-    print(f"  解析 {dao_file}...")
+    # 解析所有道 + journal
+    log(f"  解析 {dao_file}...")
     daos = parse_dao_md(dao_file)
-    print(f"    → {len(daos)} 条道")
+    log(f"    → {len(daos)} 条道")
 
-    # 加载 journal
     journals_dir = root / "dao" / "journal"
     journal_count = 0
     if journals_dir.exists():
         for d in daos:
             load_journal(journals_dir, d)
             journal_count += len(d.journal_entries)
-        print(f"    → {journal_count} 条 journal 记录")
+        log(f"    → {journal_count} 条 journal 记录")
 
     # 解析所有书
     books: list[Book] = []
@@ -1389,23 +1506,21 @@ def main() -> int:
                 try:
                     book = parse_book_dir(bd)
                     books.append(book)
-                    print(f"    → 书：{book.name} (法{len(book.fa)} 术{len(book.shu)} 器{len(book.qi)} 势{len(book.shi)})")
+                    log(f"    → 书：{book.name} (法{len(book.fa)} 术{len(book.shu)} 器{len(book.qi)} 势{len(book.shi)})")
                 except Exception as e:
-                    print(f"    ⚠️ 解析 {bd.name} 失败：{e}")
+                    log(f"    ⚠️ 解析 {bd.name} 失败：{e}")
 
     # 今日选取
     state = read_today_state(root)
     today_date = dt.date.today().isoformat()
-    today_dao: Dao
-    today_question: str
     if state and state[0] == today_date:
         _, sync_id, sync_q = state
         today_dao = next((d for d in daos if d.id == sync_id), daos[0])
         today_question = sync_q
-        print(f"    → 同步 today.tsv：道{today_dao.id}")
+        log(f"    → 同步 today.tsv：道{today_dao.id}")
     else:
         today_dao, today_question = pick_today(daos)
-        print(f"    → 独立选取：道{today_dao.id}")
+        log(f"    → 独立选取：道{today_dao.id}")
 
     today_obj = dt.date.today()
     weekday_cn = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][today_obj.weekday()]
@@ -1416,77 +1531,206 @@ def main() -> int:
         "weekday": weekday_cn,
     }
 
-    # ── 渲染所有页 ──
-
-    # index.html (today)
+    # 渲染
     body = render_today(today_dao, today_question, date_info, bool(today_dao.journal_entries))
     (site / "index.html").write_text(
         html_shell(f"{today_obj.month}月{today_obj.day}日 · 道{today_dao.id}",
-                   body, "_assets/style.css", "today"),
+                   body, "_assets/style.css", "today", with_script=True),
         encoding="utf-8"
     )
-    print(f"  ✓ site/index.html")
 
-    # dao/index.html
     (site / "dao").mkdir(exist_ok=True)
-    body = render_dao_overview(daos)
     (site / "dao" / "index.html").write_text(
-        html_shell("所有的道", body, "../_assets/style.css", "dao"),
+        html_shell("所有的道", render_dao_overview(daos),
+                   "../_assets/style.css", "dao"),
         encoding="utf-8"
     )
-    print(f"  ✓ site/dao/index.html")
-
-    # dao/道N.html
     for dao in daos:
-        body = render_dao_page(dao)
         (site / "dao" / f"道{dao.id}.html").write_text(
-            html_shell(f"道{dao.id}：{dao.title[:25]}", body,
-                       "../_assets/style.css", "dao"),
-            encoding="utf-8"
-        )
-    print(f"  ✓ site/dao/道N.html × {len(daos)}")
-
-    # books/
-    if books:
-        (site / "books").mkdir(exist_ok=True)
-        body = render_book_overview(books)
-        (site / "books" / "index.html").write_text(
-            html_shell("书架", body, "../_assets/style.css", "books"),
-            encoding="utf-8"
-        )
-        for book in books:
-            bdir = site / "books" / book.name
-            bdir.mkdir(exist_ok=True)
-            body = render_book_page(book)
-            (bdir / "index.html").write_text(
-                html_shell(f"《{book.display_name or book.name}》", body,
-                           "../../_assets/style.css", "books", wide=True),
-                encoding="utf-8"
-            )
-        print(f"  ✓ site/books/ × {len(books)} 本")
-    else:
-        # 空书架页
-        (site / "books").mkdir(exist_ok=True)
-        body = render_book_overview([])
-        (site / "books" / "index.html").write_text(
-            html_shell("书架", body, "../_assets/style.css", "books"),
+            html_shell(f"道{dao.id}：{dao.title[:25]}", render_dao_page(dao),
+                       "../_assets/style.css", "dao", with_script=True),
             encoding="utf-8"
         )
 
-    # journal/index.html （跨道总览。单条道的 journal 已内联到 dao/道N.html）
-    (site / "journal").mkdir(exist_ok=True)
-    body = render_journal_index(daos)
-    (site / "journal" / "index.html").write_text(
-        html_shell("浸泡记录总览", body, "../_assets/style.css", "journal"),
+    (site / "books").mkdir(exist_ok=True)
+    (site / "books" / "index.html").write_text(
+        html_shell("书架", render_book_overview(books),
+                   "../_assets/style.css", "books"),
         encoding="utf-8"
     )
-    # 清理旧版残留的 journal/道N.html
+    for book in books:
+        bdir = site / "books" / book.name
+        bdir.mkdir(exist_ok=True)
+        (bdir / "index.html").write_text(
+            html_shell(f"《{book.display_name or book.name}》", render_book_page(book),
+                       "../../_assets/style.css", "books", wide=True),
+            encoding="utf-8"
+        )
+
+    (site / "journal").mkdir(exist_ok=True)
+    (site / "journal" / "index.html").write_text(
+        html_shell("浸泡记录总览", render_journal_index(daos),
+                   "../_assets/style.css", "journal"),
+        encoding="utf-8"
+    )
     for old in (site / "journal").glob("道*.html"):
         old.unlink()
-    print(f"  ✓ site/journal/index.html （跨道总览）")
 
+    log(f"  ✓ site/ 全部页面已写入")
+
+
+# ── 本地服务器 ──────────────────────────────────────────────
+
+
+def make_server_handler(root: Path):
+    """工厂：返回一个绑定了 root 的 HTTP handler 类"""
+    site_dir = root / "site"
+
+    class TwbHandler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=str(site_dir), **kwargs)
+
+        def do_POST(self):
+            if self.path == '/api/note':
+                self._handle_note()
+            else:
+                self.send_error(404, "Not Found")
+
+        def _handle_note(self):
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                if length == 0:
+                    self._send_error(400, "Empty body")
+                    return
+                data = json.loads(self.rfile.read(length))
+
+                dao_id = int(data.get('dao_id', 0))
+                text = (data.get('text') or '').strip()
+                question = (data.get('question') or '').strip() or None
+
+                if dao_id <= 0:
+                    self._send_error(400, "missing dao_id")
+                    return
+                if not text:
+                    self._send_error(400, "empty text")
+                    return
+
+                journal_file, count = append_journal_entry(root, dao_id, text, question)
+
+                # 重新渲染
+                try:
+                    render_all(root, quiet=True)
+                except Exception as e:
+                    print(f"  ⚠️ render_all 失败但 journal 已写：{e}", file=sys.stderr)
+
+                self._send_json(200, {
+                    "ok": True,
+                    "dao_id": dao_id,
+                    "entries_count": count,
+                    "journal_path": str(journal_file),
+                    "timestamp": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                })
+
+            except json.JSONDecodeError as e:
+                self._send_error(400, f"bad json: {e}")
+            except Exception as e:
+                self._send_error(500, f"{type(e).__name__}: {e}")
+
+        def _send_json(self, code: int, body: dict):
+            payload = json.dumps(body, ensure_ascii=False).encode('utf-8')
+            self.send_response(code)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def _send_error(self, code: int, msg: str):
+            self._send_json(code, {"ok": False, "error": msg})
+
+        def log_message(self, fmt, *args):
+            # 安静一些——只 log POST 和错误
+            if 'POST' in (args[0] if args else '') or any('error' in str(a).lower() for a in args):
+                print(f"  [server] {fmt % args}")
+
+    return TwbHandler
+
+
+def start_server(root: Path, port: int = 8080) -> None:
+    """启动本地 HTTP 服务器（静态站点 + /api/note 写入）"""
+    # 首次启动先渲染一遍
+    print(f"\n首次渲染...")
+    render_all(root, quiet=True)
+    print(f"  ✓ site/ 就绪")
+
+    Handler = make_server_handler(root)
+
+    # 找空闲端口
+    while port < port + 20:
+        try:
+            with socketserver.TCPServer(("127.0.0.1", port), Handler) as httpd:
+                url = f"http://127.0.0.1:{port}"
+                print(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                print(f"  读后无书 · talk without book")
+                print(f"  本地服务运行中：{url}")
+                print(f"  按 Ctrl+C 停止")
+                print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+                # 自动打开浏览器（仅 macOS / Linux 有 open / xdg-open）
+                try:
+                    if sys.platform == "darwin":
+                        os.system(f"open {url}")
+                    elif sys.platform.startswith("linux"):
+                        os.system(f"xdg-open {url} 2>/dev/null &")
+                except Exception:
+                    pass
+
+                try:
+                    httpd.serve_forever()
+                except KeyboardInterrupt:
+                    print("\n  ✓ 已停止")
+                    return
+        except OSError as e:
+            if "Address already in use" in str(e):
+                print(f"  端口 {port} 被占用，尝试 {port + 1}...")
+                port += 1
+                continue
+            raise
+
+
+# ── 主入口 ──────────────────────────────────────────────────
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="读后无书 · 全产出物 HTML 渲染器"
+    )
+    parser.add_argument("root", type=Path,
+                        help="知识库根目录（$TWB_ROOT），必须包含 dao/道.md")
+    parser.add_argument("--serve", action="store_true",
+                        help="启动本地 HTTP 服务器（含写入 API）而不是只生成静态文件")
+    parser.add_argument("--port", type=int, default=8080,
+                        help="服务器端口（默认 8080，被占用则自动 +1）")
+    args = parser.parse_args()
+
+    root: Path = args.root.resolve()
+
+    if args.serve:
+        try:
+            start_server(root, args.port)
+        except FileNotFoundError as e:
+            print(f"✗ {e}", file=sys.stderr)
+            return 1
+        return 0
+
+    try:
+        render_all(root, quiet=False)
+    except FileNotFoundError as e:
+        print(f"✗ {e}", file=sys.stderr)
+        return 1
+
+    site = root / "site"
     print(f"\n✓ 全部渲染完成 → {site}")
     print(f"  打开：open {site / 'index.html'}")
+    print(f"  或启动交互模式：python {sys.argv[0]} {root} --serve")
     return 0
 
 
