@@ -51,11 +51,9 @@ metadata:
 
 - **道索引**：`$TWB_ROOT/dao/道.md`
 - **journal 目录**：`$TWB_ROOT/dao/journal/道N.md`
-- **当日状态文件**：按以下顺序查找
-  1. `$TWB_ROOT/.state/today.tsv`（推荐位置）
-  2. `~/.claude/.cc-dao-today`（cc 启动器写入的位置，老用户兼容）
-
+- **当日状态文件**：`$TWB_ROOT/.state/today.tsv`
   格式：`date\tdao_id\tquestion`
+  （文件不存在时本 skill 自己算今日之道，不依赖任何外部 banner / launcher）
 
 ### 没有当日状态时的算法
 
@@ -85,7 +83,7 @@ metadata:
 
 ## A. 展示今日
 
-1. 读 `~/.claude/.cc-dao-today`，确认今天的 dao_id 和 question
+1. 读 `$TWB_ROOT/.state/today.tsv`（如果存在）。否则按"没有当日状态时的算法"自己算。
 2. 从 `$TWB_ROOT/dao/道.md` 抽该道的完整内容（标题、表述、所有检索问题、书源、关系）
 3. 读 `$TWB_ROOT/dao/journal/道N.md`（如果存在），统计条数 + 选最近 2-3 条做摘要
 4. 输出格式（保持冷静、留白、不堆砌 emoji）：
@@ -117,7 +115,7 @@ metadata:
 
 ### 步骤
 
-1. 读 `~/.claude/.cc-dao-today` 拿到今日 (dao_id, question)
+1. 读 `$TWB_ROOT/.state/today.tsv` 拿到今日 (dao_id, question)
 2. 评估用户回应的具体度（见下方判据）
 3. 如果不够具体——**追问 1-2 次**（不要超过 2 次，否则变成审问）
 4. 用户给出足够具体的回应后，**写入 journal**
@@ -176,7 +174,7 @@ metadata:
 {一两句话的"接住"——指出回应里最有价值的点、或者一个轻量的延伸问题，不要总结、不要"很棒"}
 ```
 
-**消费状态文件**：写入成功后，删除 `~/.claude/.cc-dao-today`（与 cc note 的行为一致——一天一问，问完即清）。
+**消费状态文件**：写入成功后，删除 `$TWB_ROOT/.state/today.tsv`（一天一问，问完即清；下次会话再算新的今日）。
 
 ---
 
